@@ -1,0 +1,416 @@
+<DOCTYPE html>
+<head>
+    <title>t-shirts</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1, minimum-scale=1" />
+    <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@200&display=swap" rel="stylesheet">
+   
+    <script src="./lib/react.development.js"></script>
+    <script src="./lib/react-dom.development.js"></script>
+    <script src="./lib/jquery-3.5.1.js"></script>
+    <script src="./lib/babel.js"></script>
+
+    <link rel="stylesheet" type="text/css" href="./styles/styles.css">
+
+</head>
+
+<body>
+    <div id='root'></div>
+
+<script type="text/babel">
+
+function Example(){
+  // Declare a new state variable, which we'll call "count"
+  const [count, setCount] = React.useState(0);
+
+  return (
+    <div>
+      <p>You clicked {count} times</p>
+      <button onClick={() => setCount(count + 1)}>
+        Click me
+      </button>
+    </div>
+  );
+}
+
+var isMobile = () => window.matchMedia("(max-width: 700px)").matches;
+
+function CarouselElement({imageSrc, caption}){
+    return (
+        <figure id={imageSrc} className={'carouselElement'}>
+            <img src={imageSrc}></img>
+            <figcaption>{caption}</figcaption>
+        </figure>
+    );
+}
+
+function CarouselNode({index, selected, goto}){
+    let className = 'carouselNode';
+    if (index == selected){ className += ' selected' }
+    return <button onClick={()=>goto(index)} className={className}></button>
+}
+
+function CarouselProgressBar({progress}){
+
+    let css = (progress>0) ? {
+        width: `${progress*100}%`
+    } : {
+        opacity: '0' // still want it to occupy space in dom
+    }
+    return (
+        <div className={'carouselProgressBar'}>
+            <hr style={css}/>
+        </div>
+    );
+}
+
+function TogglePlayButton({togglePlay, isPlaying}){
+    let src = (isPlaying) ? './images/pause.svg' : './images/play.svg';
+    let css = {backgroundImage: `url(${src})`};
+    return <button className={'togglePlay'} onClick={togglePlay} style={css}></button>
+}
+
+
+var getWidthCenter = ($el) => $el.offset().left - $el.width()/2;
+var distance = (x, y) => Math.abs(x-y);
+var getWidthDist =($el1, $el2) => distance(getWidthCenter($el1), getWidthCenter($el2));
+ 
+function MobileCarousel({carouselElements}){
+    let length = carouselElements.length;
+
+    let carouselImagesRef = React.useRef();
+
+    let [state, dispatch] = React.useReducer((state, action)=>{
+        switch(action.type){
+            case 'scroll':
+                let carouselImages = $(carouselImagesRef.current);
+                let carouselDist = ($el) => getWidthDist($el, carouselImages);
+                let children = $(carouselImages).children().toArray();
+
+                var func = (accIndex, child, index) => {
+                    let $accChild = $(children[accIndex]);
+
+                    return (carouselDist($accChild) < carouselDist($(child))) ? accIndex : index;
+                }
+
+                let closestIndex = children.reduce(func, 0);
+
+                return {index: closestIndex}
+            case 'goto':
+                return {index: action.index};
+            default: 
+                return state;
+        }
+    }, {
+        index: 0
+    });
+
+    let carouselNodes = [];
+    for (let i in carouselElements) { 
+        carouselNodes.push(
+            <CarouselNode key={i} index={i} selected={state.index} goto={
+                (i)=>{
+                    let carouselImages = $(carouselImagesRef.current);
+                    let children = $(carouselImages).children().toArray();
+                    let scrollTo = getWidthCenter($(children[i])) + carouselImages.scrollLeft();
+                    carouselImages.scrollLeft(scrollTo);
+                } // carouselNodes dont do anything on mobile
+            }/>
+        ); 
+    }
+
+    return (
+        <div className={'carousel'}>
+            <div 
+                className={'carouselImages'} 
+                onScroll={()=>dispatch({type: 'scroll'})} 
+                ref={carouselImagesRef}>
+                {carouselElements}
+            </div>
+            <div className={'carouselNodesContainer'}>
+                {carouselNodes}
+            </div>
+        </div>
+    );
+}
+
+
+var myReq; 
+const SLIDE_DURATION = 3000; //ms
+
+function Carousel({carouselElements}){
+    /* 
+    state: {index: int, isPlaying: Boolean}
+    action: {type: str, ?index: int} 
+    */
+
+    let [state, dispatch] = React.useReducer((state, action)=>{
+        switch(action.type){
+            case 'progress':
+                return {
+                    ...state,
+                    progress: action.progress
+                }
+            case 'togglePlay':
+                return {
+                    ...state, 
+                    isPlaying: !state.isPlaying,
+                    startTime: performance.now() - state.progress*SLIDE_DURATION
+                }
+            case 'next':
+                return {
+                    ...state,
+                    isPlaying: true,
+                    index: (state.index + 1)%carouselElements.length,
+                    startTime: performance.now()
+                }
+            case 'goto':
+                return {
+                    ...state,
+                    index: action.index, 
+                    isPlaying: false,
+                    progress: 0.0
+                }
+
+            default: 
+                return state;
+        }
+    },
+    {
+        index: 0, 
+        isPlaying: true, 
+        startTime: performance.now(), 
+        progress: 0.0,
+    });
+    
+    React.useEffect(
+        () => {
+            if (state.isPlaying){
+                let func = (timestamp) => {
+                    if (!state.isPlaying) return;
+                    let progress = (timestamp - state.startTime)/SLIDE_DURATION;
+                    if (progress > 1){
+                        dispatch({type: 'next'});
+                    } else {
+                        dispatch({type: 'progress', progress: progress});
+                        myReq = requestAnimationFrame(func);
+                    }
+                }
+                myReq = requestAnimationFrame(func);
+                return () => {
+                    cancelAnimationFrame(myReq);
+                    myReq = undefined;
+                }
+            } else if (myReq !== undefined) {
+                cancelAnimationFrame(myReq);
+            }
+        },
+        [state.isPlaying, state.index, myReq]
+    );
+    
+
+    let carouselNodes = [];
+    for (let i in carouselElements) { 
+        carouselNodes.push(
+            <CarouselNode key={i} index={i} selected={state.index} goto={
+                (i)=>dispatch({type: 'goto', index: i})
+            }/>
+        ); 
+    }
+
+    return (
+        <div className={'carousel'}>
+            {carouselElements[state.index]}
+            <div className={'carouselNodesContainer'}>
+                {carouselNodes}
+            </div>
+            {/*<CarouselProgressBar progress={state.progress}/>*/}
+            <CarouselProgressBar
+                progress={state.progress}
+            />
+            <TogglePlayButton 
+                togglePlay={()=>dispatch({type: 'togglePlay'})} 
+                isPlaying={state.isPlaying}
+            />
+        </div>
+    );
+}
+
+
+
+function Icon(){
+    return <img className={'companyLogo'} src='./images/threeLittleBirds.svg'></img>
+}
+
+function TShirtIcon({angle, color}) {
+    let css = {
+        transform: `rotate(${angle}deg)`,
+        color: color
+    }
+    return <svg style={css} aria-hidden="true" focusable="false" data-prefix="fas" data-icon="tshirt" role="img" xmlns="http://www.w3.org/2000/svg" viewBox="0 0 640 512"><path fill="currentColor" d="M631.2 96.5L436.5 0C416.4 27.8 371.9 47.2 320 47.2S223.6 27.8 203.5 0L8.8 96.5c-7.9 4-11.1 13.6-7.2 21.5l57.2 114.5c4 7.9 13.6 11.1 21.5 7.2l56.6-27.7c10.6-5.2 23 2.5 23 14.4V480c0 17.7 14.3 32 32 32h256c17.7 0 32-14.3 32-32V226.3c0-11.8 12.4-19.6 23-14.4l56.6 27.7c7.9 4 17.5.8 21.5-7.2L638.3 118c4-7.9.8-17.6-7.1-21.5z"></path></svg>
+}
+
+function TabButton({name, selected, setSelected}){
+    let className = (selected == name) ? 'selected' : 'notSelected';
+    let onClick = () => setSelected(name);
+
+    return <button onClick={onClick} className={className}>{name}</button>
+}
+
+/* expects props.name(str), props.selected(str), props.html(str) */
+function Tab({name, selected, html}){
+    return (selected == name) ? <div id={name}>{html}</div> : null; 
+}
+
+/* expects props.color(str) */
+function ColorBall({color}){
+    let css = {backgroundColor: color};
+    return <div className={'colorBall'} style={css}></div>
+}
+/* expects props.name(str), props.colors(str[]), props.desc(str), props.price(float) */
+/* optional props.imageSrc(str) */
+function Product({name, colors, desc, price, imageSrc}){
+    let image;
+    price = price.toFixed(2);
+
+    if (imageSrc){
+        image = <img src={imageSrc}/>
+    } else {
+        image = <TShirtIcon angle={0} color={'white'}/>
+    }
+
+    let imageContainer = (
+        <div className={'imageContainer'}>
+            {image}
+        </div>
+    );
+
+    let sidebarMobile = (
+        <React.Fragment>
+            <h2>{name}</h2>
+            <h3>{`$${price}`}</h3>
+            <h3>Colors</h3>
+            <div className={'colorBallContainer'}>
+                {colors.map((color)=><ColorBall key={color} color={color}/>)}
+            </div>
+        </React.Fragment>
+    );
+
+    let description = (
+        <div className={'productDesc'}>
+            <h3>Description</h3>
+            <p className={'desc'}>{desc}</p>
+        </div>
+    );
+
+    return (isMobile()) ? (
+        <div className={'productContainerMobile'}>
+            <div className={'productContainer'}>
+                {imageContainer}
+                <div className={'productSidebar'}>
+                    {sidebarMobile}
+                </div>
+            </div>  
+            {description}
+        </div>       
+    ) : (
+        <div className={'productContainer'}>
+            {imageContainer}
+            <div className={'productSidebar'}>
+                {sidebarMobile}
+                {description}
+            </div>
+        </div>
+    );
+}
+
+function Home() {
+    const [selected, setSelected] = React.useState('home');
+
+    return (
+        <React.Fragment>
+            {/*<Icon/>*/}
+            <header>
+                <div id='logo'>
+                    <div id='shirts'>
+                        <TShirtIcon angle={-5} color={'salmon'}/>
+                        <TShirtIcon angle={10} color={'aquamarine'}/>
+                    </div>
+                    <h1 id='title'>T-shirts</h1>
+                </div>
+            </header>
+            <div id='tabs'>
+                <TabButton name={'home'} selected={selected} setSelected={setSelected}/>
+                <TabButton name={'products'} selected={selected} setSelected={setSelected}/>
+                <TabButton name={'contact'} selected={selected} setSelected={setSelected}/>
+            </div>
+            <Tab name={'home'} selected={selected} html={(isMobile()) ? (
+                    <MobileCarousel
+                        carouselElements={[
+                            <CarouselElement imageSrc={'./images/tshirtGreen.svg'} caption={'custom t-shirt'}/>,
+                            <CarouselElement imageSrc={'./images/tshirtPurple.svg'} caption={'different sizes'}/>,
+                            <CarouselElement imageSrc={'./images/tshirtYellow.svg'} caption={'quality fabric'}/>
+                        ]}
+                    />
+                ) : (
+                    <Carousel
+                        carouselElements={[
+                            <CarouselElement imageSrc={'./images/tshirtGreen.svg'} caption={'custom t-shirt'}/>,
+                            <CarouselElement imageSrc={'./images/tshirtPurple.svg'} caption={'different sizes'}/>,
+                            <CarouselElement imageSrc={'./images/tshirtYellow.svg'} caption={'quality fabric'}/>
+                        ]}
+                    />
+                )
+            }/>
+            <Tab name={'products'} selected={selected} html={
+                <React.Fragment>
+                    <Product 
+                        name={'Crewneck T-shirt'} 
+                        price={20}
+                        colors={['salmon', 'skyblue', 'seagreen']} 
+                        desc={'Lorem ipsum dolor sit amet, consectetur adipiscing elit. Donec aliquet diam at ligula fringilla, ac convallis quam iaculis. Ut ante lectus, tempor in est sit amet, tempor lacinia nulla. Proin aliquam tellus at felis sollicitudin, in placerat arcu fringilla. Phasellus pharetra, quam et dignissim scelerisque, tellus ex efficitur orci, at tincidunt nibh dolor a mi.'}
+                    />
+                    <Product 
+                        name={'Jacket'}
+                        price={17.99}
+                        colors={['grey', 'white']} 
+                        desc={'Aenean at erat bibendum, vulputate ligula nec, blandit nulla. Integer tempor tincidunt lectus ornare efficitur. Praesent vehicula vehicula lorem posuere auctor. Quisque eget pulvinar sem. Fusce et enim ullamcorper, ullamcorper felis eu, iaculis sapien. Proin tellus dolor, pharetra in viverra sit amet, pharetra vel turpis. Curabitur posuere, sem vitae tempor accumsan, dolor arcu fringilla lacus, vitae imperdiet arcu purus suscipit mauris. '}
+                    />
+                    <Product 
+                        name={'Fitted T-shirt'} 
+                        price={8.99}
+                        colors={['cornsilk', 'azure', 'aliceblue']} 
+                        desc={'Ut et interdum urna. Aenean consectetur libero non dignissim dictum. Praesent at velit et dolor consectetur aliquam ac eget nisl. Ut nulla lectus, pretium nec tristique non, ornare sed nisl. Cras viverra vitae ligula in varius. Aenean et elementum quam. Etiam luctus finibus orci id consectetur.'}
+                    />
+                </React.Fragment>
+            }/>
+            <Tab name={'contact'} selected={selected} html={
+                <div id='contactContainer'>
+                    <h2>Contact Us</h2>
+                    <p>For information on pricing and placing orders, contact:</p>
+                    <div className='personOuterContainer'>
+                        <div className='personInnerContainer'>
+                            <p>Alex Pegg</p>
+                            <p>123 456-7890</p>
+                            <p><a href="gracefermo@me.com">alex.pegg@mail.utoronto.ca</a></p>
+                        </div>
+                    </div>
+                </div>
+            }/>
+            <div id='fauxFooter'></div>
+            <footer>
+                <p>Copyright © 2020 Alex Pegg. All rights reserved. Icons by <a href="https://fontawesome.com" target="_blank">Font Awesome</a>.</p>
+            </footer>
+        </React.Fragment>
+    );
+}
+
+ReactDOM.render( <Home/>, document.getElementById("root"));
+
+</script>
+
+
+</body>
+</html>
+    
+    
+    
